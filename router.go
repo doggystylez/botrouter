@@ -15,13 +15,13 @@ func Parse(c ContractInfo) (routes RoutingTable, err error) {
 		if strings.HasPrefix(str, "routing_table") {
 			if strings.HasPrefix(str, "routing_tableD") {
 				route = Route{
-					DenomIn:  str[14:82],
-					DenomOut: str[82:],
+					InputDenom:  str[14:82],
+					OutputDenom: str[82:],
 				}
 			} else if strings.HasPrefix(str, "routing_tableuosmo") {
 				route = Route{
-					DenomIn:  "uosmo",
-					DenomOut: str[18:],
+					InputDenom:  "uosmo",
+					OutputDenom: str[18:],
 				}
 			}
 			poolRoutes := []PoolRoute{}
@@ -36,20 +36,20 @@ func Parse(c ContractInfo) (routes RoutingTable, err error) {
 	return
 }
 
-// search all routes in reverse, including intermediary routes
-func ReverseAndFill(routingTable RoutingTable) (newRoutes []RouteAdd, err error) {
+// search all routes in reverse
+func (rt RoutingTable) Reverse() (newRoutes []RouteAdd) {
 	matched := make(map[string]string)
-	denomRoutes := sortRoutes(routingTable)
+	denomRoutes := rt.sortRoutes()
 	for in, routes := range denomRoutes {
 		for _, out := range routes {
 			if !utils.StringInSlice(in, denomRoutes[out]) {
 				denomIn, denomOut := out, in
 				matched[denomIn] = denomOut
-				newRoute := SetRoute{
+				newRoute := Route{
 					InputDenom:  denomIn,
 					OutputDenom: denomOut,
 				}
-				route := getRoutes(in, out, routingTable)
+				route := rt.getRoute(in, out)
 				var pools, denoms []string
 				skip := true
 				for i := len(route) - 1; i >= 0; i-- {
@@ -61,16 +61,6 @@ func ReverseAndFill(routingTable RoutingTable) (newRoutes []RouteAdd, err error)
 				}
 				denoms = append(denoms, in)
 				for i, denomOut := range denoms {
-					if !utils.StringInSlice(denomOut, denomRoutes[denomIn]) && matched[denomIn] != denomOut {
-						newRoutes = append(newRoutes, RouteAdd{SetRoute{
-							InputDenom:  denomIn,
-							OutputDenom: denomOut,
-							PoolRoute: []PoolRoute{{
-								PoolID:        pools[i],
-								TokenOutDenom: denomOut,
-							}}},
-						})
-					}
 					newRoute.PoolRoute = append(newRoute.PoolRoute, PoolRoute{
 						PoolID:        pools[i],
 						TokenOutDenom: denomOut,
@@ -85,23 +75,49 @@ func ReverseAndFill(routingTable RoutingTable) (newRoutes []RouteAdd, err error)
 	return
 }
 
-func GetRoutesByDenom(inDenom string, routingTable RoutingTable) (outDenoms []string) {
-	return sortRoutes(routingTable)[inDenom]
-}
-
-func sortRoutes(routingTable RoutingTable) (sortedRoutes map[string][]string) {
-	sortedRoutes = make(map[string][]string)
-	for _, route := range routingTable.Routes {
-		sortedRoutes[route.DenomIn] = append(sortedRoutes[route.DenomIn], route.DenomOut)
+// search intermediary routes
+func (rt RoutingTable) Fill() (newRoutes []RouteAdd) {
+	matched := make(map[string]string)
+	for _, route := range rt.Routes {
+		if len(route.PoolRoute) > 1 {
+			var poolRoute []PoolRoute
+			denomIn := route.InputDenom
+			for _, subroute := range route.PoolRoute {
+				if denomIn == subroute.TokenOutDenom {
+					continue
+				}
+				poolRoute = append(poolRoute, subroute)
+				if rt.getRoute(denomIn, subroute.TokenOutDenom) == nil {
+					newRoutes = append(newRoutes, RouteAdd{Route{
+						InputDenom:  denomIn,
+						OutputDenom: subroute.TokenOutDenom,
+						PoolRoute:   poolRoute,
+					}})
+					matched[denomIn] = subroute.TokenOutDenom
+				}
+			}
+		}
 	}
 	return
 }
 
-func getRoutes(inDenom string, outDenom string, routingTable RoutingTable) []PoolRoute {
-	for _, route := range routingTable.Routes {
-		if route.DenomIn == inDenom && route.DenomOut == outDenom {
+func (rt RoutingTable) GetRoutesByDenom(inDenom string) []string {
+	return rt.sortRoutes()[inDenom]
+}
+
+func (rt RoutingTable) sortRoutes() map[string][]string {
+	sortedRoutes := make(map[string][]string)
+	for _, route := range rt.Routes {
+		sortedRoutes[route.InputDenom] = append(sortedRoutes[route.InputDenom], route.OutputDenom)
+	}
+	return sortedRoutes
+}
+
+func (rt RoutingTable) getRoute(inDenom string, outDenom string) []PoolRoute {
+	for _, route := range rt.Routes {
+		if route.InputDenom == inDenom && route.OutputDenom == outDenom {
 			return route.PoolRoute
 		}
 	}
-	return []PoolRoute{}
+	return nil
 }
