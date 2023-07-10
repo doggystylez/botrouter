@@ -49,7 +49,7 @@ func (rt RoutingTable) Reverse() (newRoutes []RouteAdd) {
 					InputDenom:  denomIn,
 					OutputDenom: denomOut,
 				}
-				route := rt.getRoute(in, out)
+				route := rt.GetRoute(in, out)
 				var pools, denoms []string
 				skip := true
 				for i := len(route) - 1; i >= 0; i-- {
@@ -87,7 +87,7 @@ func (rt RoutingTable) Fill() (newRoutes []RouteAdd) {
 					continue
 				}
 				poolRoute = append(poolRoute, subroute)
-				if rt.getRoute(denomIn, subroute.TokenOutDenom) == nil {
+				if rt.GetRoute(denomIn, subroute.TokenOutDenom) == nil {
 					newRoutes = append(newRoutes, RouteAdd{Route{
 						InputDenom:  denomIn,
 						OutputDenom: subroute.TokenOutDenom,
@@ -113,7 +113,7 @@ func (rt RoutingTable) sortRoutes() map[string][]string {
 	return sortedRoutes
 }
 
-func (rt RoutingTable) getRoute(inDenom string, outDenom string) []PoolRoute {
+func (rt RoutingTable) GetRoute(inDenom string, outDenom string) []PoolRoute {
 	for _, route := range rt.Routes {
 		if route.InputDenom == inDenom && route.OutputDenom == outDenom {
 			return route.PoolRoute
