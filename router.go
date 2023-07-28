@@ -38,13 +38,11 @@ func Parse(c ContractInfo) (routes RoutingTable, err error) {
 
 // search all routes in reverse
 func (rt RoutingTable) Reverse() (newRoutes []RouteAdd) {
-	matched := make(map[string]string)
 	denomRoutes := rt.sortRoutes()
 	for in, routes := range denomRoutes {
 		for _, out := range routes {
 			if !utils.StringInSlice(in, denomRoutes[out]) {
 				denomIn, denomOut := out, in
-				matched[denomIn] = denomOut
 				newRoute := Route{
 					InputDenom:  denomIn,
 					OutputDenom: denomOut,
@@ -65,8 +63,6 @@ func (rt RoutingTable) Reverse() (newRoutes []RouteAdd) {
 						PoolID:        pools[i],
 						TokenOutDenom: denomOut,
 					})
-					matched[denomIn] = denomOut
-					denomIn = denomOut
 				}
 				newRoutes = append(newRoutes, RouteAdd{newRoute})
 			}
@@ -77,7 +73,6 @@ func (rt RoutingTable) Reverse() (newRoutes []RouteAdd) {
 
 // search intermediary routes
 func (rt RoutingTable) Fill() (newRoutes []RouteAdd) {
-	matched := make(map[string]string)
 	for _, route := range rt.Routes {
 		if len(route.PoolRoute) > 1 {
 			var poolRoute []PoolRoute
@@ -93,8 +88,52 @@ func (rt RoutingTable) Fill() (newRoutes []RouteAdd) {
 						OutputDenom: subroute.TokenOutDenom,
 						PoolRoute:   poolRoute,
 					}})
-					matched[denomIn] = subroute.TokenOutDenom
 				}
+			}
+		}
+	}
+	return
+}
+
+// connect routes with common tokens
+func (rt RoutingTable) Connect() (newRoutes []RouteAdd) {
+	denomRoutes := rt.sortRoutes()
+	var denoms = make([]string, len(denomRoutes))
+	for in := range denomRoutes {
+		denoms = append(denoms, in)
+	}
+	for _, input := range denoms {
+		outputs := rt.GetRoutesByDenom(input)
+		for _, output := range denoms {
+			if input == output {
+				continue
+			}
+			if utils.StringInSlice(output, outputs) {
+				continue
+			}
+			var connectRoutes [][]PoolRoute
+			for _, connector := range denomRoutes[output] {
+				if utils.StringInSlice(connector, outputs) {
+					route := rt.GetRoute(input, connector)
+					route = append(route, rt.GetRoute(connector, output)...)
+					connectRoutes = append(connectRoutes, route)
+				}
+			}
+			if len(connectRoutes) != 0 {
+				var shortest []PoolRoute
+				for _, route := range connectRoutes {
+					if len(shortest) == 0 {
+						shortest = route
+					}
+					if len(route) < len(shortest) {
+						shortest = route
+					}
+				}
+				newRoutes = append(newRoutes, RouteAdd{Route{
+					InputDenom:  input,
+					OutputDenom: output,
+					PoolRoute:   shortest,
+				}})
 			}
 		}
 	}
